@@ -1,0 +1,124 @@
+<view class="page-wrapper">
+  <navigation-bar title="文章配图助手" back="{{false}}" color="rgba(255,255,255,0.9)" background="transparent"></navigation-bar>
+
+  <view class="main-container">
+    <!-- 比例选择条 -->
+    <view class="ratio-bar" wx:if="{{imageUrl}}">
+      <view wx:for="{{ratioList}}" wx:key="name"
+        class="ratio-item {{selectedRatio === item.name ? 'active' : ''}}"
+        bindtap="onRatioSelect" data-name="{{item.name}}">
+        <text class="ratio-icon">{{item.icon}}</text>
+        <text class="ratio-name">{{item.name}}</text>
+        <text class="ratio-label">{{item.label}}</text>
+      </view>
+    </view>
+
+    <!-- 画布区域 -->
+    <view class="canvas-area">
+      <view class="canvas-wrapper" style="width:{{canvasWidth}}px;height:{{canvasHeight}}px;">
+        <image wx:if="{{imageUrl}}" class="bg-image" src="{{imageUrl}}" mode="aspectFill"></image>
+
+        <view wx:else class="placeholder" bindtap="onChooseImage">
+          <view class="placeholder-glow"></view>
+          <text class="placeholder-icon">📷</text>
+          <text class="placeholder-text">点击上传图片</text>
+        </view>
+
+        <!-- 多行文字层 -->
+        <view wx:if="{{hasText && textContent}}"
+          class="text-layer {{actualGlowEffect ? 'glow-effect' : ''}}"
+          style="left:{{textX}}px;top:{{textY}}px;font-size:{{actualFontSize}}px;color:{{actualColor}};font-family:'{{actualFontFamily}}';font-weight:{{actualFontWeight}};text-align:{{actualTextAlign}};text-shadow:{{actualTextShadow}};line-height:{{actualLineHeight}};"
+          bindtouchstart="onTextTouchStart"
+          bindtouchmove="onTextTouchMove"
+          bindtouchend="onTextTouchEnd"
+          bindtap="onTextTap">
+          <text user-select="false" style="white-space:pre-wrap;">{{textContent}}</text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 底部 Dock -->
+  <view class="bottom-dock">
+    <view class="dock-inner">
+      <view class="dock-btn" bindtap="onChooseImage">
+        <view class="dock-icon-wrapper">
+          <text class="dock-icon">🖼</text>
+        </view>
+        <text class="dock-text">换图</text>
+      </view>
+      <view class="dock-divider"></view>
+      <view class="dock-btn" bindtap="onAddText">
+        <view class="dock-icon-wrapper accent">
+          <text class="dock-icon">✏</text>
+        </view>
+        <text class="dock-text">加字</text>
+      </view>
+      <view class="dock-divider"></view>
+      <view class="dock-btn" bindtap="onSave">
+        <view class="dock-icon-wrapper">
+          <text class="dock-icon">↓</text>
+        </view>
+        <text class="dock-text">保存</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 文字编辑面板 -->
+  <view class="edit-panel {{showEditPanel ? 'show' : ''}}" catchtouchmove="preventMove">
+    <view class="panel-mask" bindtap="onClosePanel"></view>
+    <view class="panel-content glass-effect">
+      <view class="panel-header">
+        <text class="panel-title">编辑文字</text>
+        <view class="panel-close" bindtap="onClosePanel">✕</view>
+      </view>
+
+      <scroll-view class="panel-body" scroll-y enhanced show-scrollbar="{{false}}">
+        <view class="panel-body-inner">
+          <!-- 文字输入 -->
+          <view class="input-row">
+            <textarea class="text-area-input"
+              placeholder="输入文字内容，支持多行"
+              value="{{textContent}}"
+              bindinput="onTextInput"
+              adjust-position="{{true}}"
+              auto-height
+              maxlength="-1" />
+          </view>
+
+          <!-- 文字预设 -->
+          <view class="section-label">文字预设</view>
+          <scroll-view class="preset-picker" scroll-x enhanced show-scrollbar="{{false}}">
+            <view wx:for="{{textPresetList}}" wx:key="name"
+              class="preset-chip {{selectedTextPreset === item.name ? 'active' : ''}}"
+              bindtap="onTextPresetSelect" data-name="{{item.name}}">
+              {{item.name}}
+            </view>
+          </scroll-view>
+
+          <!-- 风格主题 -->
+          <view class="section-label">风格主题</view>
+          <scroll-view class="theme-picker" scroll-x enhanced show-scrollbar="{{false}}">
+            <view wx:for="{{themeList}}" wx:key="name"
+              class="theme-card {{selectedTheme === item.name ? 'active' : ''}}"
+              bindtap="onThemeSelect" data-name="{{item.name}}">
+              <view class="theme-preview" style="background-color:{{item.color}};font-family:'{{item.fontFamily}}';{{item.glowEffect ? 'box-shadow: 0 0 8px ' + item.glowColor : ''}}">
+                <text class="theme-preview-icon">{{item.icon}}</text>
+              </view>
+              <text class="theme-card-name">{{item.name}}</text>
+            </view>
+          </scroll-view>
+
+          <view class="panel-spacer"></view>
+        </view>
+      </scroll-view>
+
+      <view class="panel-footer">
+        <view class="panel-btn delete-btn" bindtap="onDeleteText">删除文字</view>
+        <view class="panel-btn confirm-btn" bindtap="onClosePanel">完成</view>
+      </view>
+    </view>
+  </view>
+
+  <canvas type="2d" id="exportCanvas" class="export-canvas"></canvas>
+</view>
