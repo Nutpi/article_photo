@@ -1,0 +1,23 @@
+@font-face {
+  font-family: 'AaJianHaoTi';
+  src: url('./fonts/AaJianHaoTi-2.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'MasaFont';
+  src: url('./fonts/MasaFont-Bold-2.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'SetoFont';
+  src: url('./fonts/SetoFont-1.ttf') format('truetype');
+}
+
+@font-face {
+  font-family: 'SourceHanSerifCN';
+  src: url('./fonts/SourceHanSerifCN-Regular.otf') format('opentype');
+}
+
+page {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
