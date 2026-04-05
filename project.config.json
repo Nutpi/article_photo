@@ -37,6 +37,7 @@
   "simulatorType": "wechat",
   "simulatorPluginLibVersion": {},
   "condition": {},
+  "cloudfunctionRoot": "cloudfunctions/",
   "srcMiniprogramRoot": "miniprogram/",
   "editorSetting": {
     "tabIndent": "insertSpaces",
@@ -52,5 +53,6 @@
     ],
     "include": []
   },
-  "appid": "wx23d840af4b921f13"
+  "appid": "wx23d840af4b921f13",
+  "cloudfunctionTemplateRoot": "cloudfunctionTemplate/"
 }

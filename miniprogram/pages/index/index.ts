@@ -144,6 +144,8 @@ Component({
         sourceType: ['album', 'camera'],
         success: (res) => {
           const tempFilePath = res.tempFiles[0].tempFilePath;
+
+          // 先显示图片
           this.setData({ imageUrl: tempFilePath });
           wx.getImageInfo({
             src: tempFilePath,
@@ -158,6 +160,62 @@ Component({
               this.recalculate();
             }
           });
+
+          // 后台异步进行图片内容安全检测
+          this.checkMediaSecurity(tempFilePath);
+        }
+      });
+    },
+
+    // ===== 图片内容安全检测（2.0 异步接口） =====
+    checkMediaSecurity(filePath: string) {
+      console.log('[安全检测] 开始检测图片:', filePath);
+
+      const uploadAndCheck = (localPath: string) => {
+        const ext = localPath.split('.').pop() || 'jpg';
+        const cloudPath = 'sec-check/' + Date.now() + '-' + Math.random().toString(36).substring(2, 10) + '.' + ext;
+
+        wx.cloud.uploadFile({
+          cloudPath: cloudPath,
+          filePath: localPath,
+          success: (uploadRes) => {
+            console.log('[安全检测] 上传成功:', uploadRes.fileID);
+            wx.cloud.callFunction({
+              name: 'mediaCheck',
+              data: { fileID: uploadRes.fileID },
+              success: (funcRes: any) => {
+                const result = funcRes.result;
+                console.log('[安全检测] 检测提交结果:', result);
+                if (!result.submitted) {
+                  wx.showToast({ title: '安全检测提交失败，请重试', icon: 'none', duration: 3000 });
+                  this.setData({ imageUrl: '', imageInfo: null, cropInfo: null });
+                  wx.cloud.deleteFile({ fileList: [uploadRes.fileID] });
+                }
+                // mediaCheckAsync 是异步检测，不立即删除文件，等微信服务器下载后再清理
+              },
+              fail: (funcErr) => {
+                console.warn('[安全检测] 云函数调用失败:', funcErr);
+                this.setData({ imageUrl: '', imageInfo: null, cropInfo: null });
+                wx.showToast({ title: '安全检测失败，请重试', icon: 'none' });
+                wx.cloud.deleteFile({ fileList: [uploadRes.fileID] });
+              }
+            });
+          },
+          fail: (uploadErr) => {
+            console.warn('[安全检测] 上传失败:', uploadErr);
+            wx.showToast({ title: '图片上传失败', icon: 'none' });
+          }
+        });
+      };
+
+      wx.compressImage({
+        src: filePath,
+        quality: 50,
+        success: (compressRes) => {
+          uploadAndCheck(compressRes.tempFilePath);
+        },
+        fail: () => {
+          uploadAndCheck(filePath);
         }
       });
     },
@@ -408,6 +466,28 @@ Component({
       if (!this.data.imageUrl) {
         wx.showToast({ title: '请先上传图片', icon: 'none' });
         return;
+      }
+
+      // 如果有文字内容，先进行文字安全检测
+      if (this.data.hasText && this.data.textContent) {
+        try {
+          const checkRes: any = await new Promise((resolve, reject) => {
+            wx.cloud.callFunction({
+              name: 'msgCheck',
+              data: { content: this.data.textContent },
+              success: resolve,
+              fail: reject
+            });
+          });
+          if (!checkRes.result.pass) {
+            wx.showToast({ title: '文字内容不合规，请修改', icon: 'none', duration: 3000 });
+            return;
+          }
+        } catch (err) {
+          console.warn('[安全检测] 文字检测失败:', err);
+          wx.showToast({ title: '安全检测失败，请重试', icon: 'none' });
+          return;
+        }
       }
 
       wx.showLoading({ title: '正在保存...' });

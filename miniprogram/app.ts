@@ -1,6 +1,7 @@
 App<IAppOption>({
   globalData: {},
   onLaunch() {
+    wx.cloud.init({ traceUser: true });
     this.loadFonts();
   },
 
