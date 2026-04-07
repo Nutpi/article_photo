@@ -1,0 +1,22 @@
+<view class="share-sheet" catchtouchmove="preventMove">
+  <view class="share-mask" bindtap="onClose"></view>
+  <view class="share-content">
+    <view class="share-header">
+      <text class="share-title">已保存到相册</text>
+      <text class="share-subtitle">分享给更多朋友吧</text>
+    </view>
+    <view class="share-actions">
+      <button class="share-btn share-friend-btn" open-type="share">
+        <text class="share-btn-icon">📤</text>
+        <text class="share-btn-text">分享给好友</text>
+      </button>
+      <view class="share-btn share-watermark-btn" bindtap="onWatermarkTap">
+        <text class="share-btn-icon">🏷</text>
+        <text class="share-btn-text">保存带水印版本</text>
+      </view>
+    </view>
+    <view class="share-close-btn" bindtap="onClose">
+      <text class="share-close-text">完成</text>
+    </view>
+  </view>
+</view>

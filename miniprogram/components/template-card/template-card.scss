@@ -1,0 +1,59 @@
+.template-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 24rpx;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1rpx solid rgba(255, 255, 255, 0.06);
+  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.template-card:active {
+  transform: scale(0.96);
+  border-color: rgba(0, 212, 255, 0.3);
+}
+
+.template-card-bg {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3/4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24rpx;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.template-card-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.template-card-text {
+  position: relative;
+  z-index: 1;
+  font-size: 22rpx;
+  color: #FFFFFF;
+  text-align: center;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+}
+
+.template-card-name {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+  padding: 16rpx 20rpx;
+  text-align: center;
+}

@@ -1,5 +1,7 @@
 {
   "usingComponents": {
-    "navigation-bar": "/components/navigation-bar/navigation-bar"
+    "navigation-bar": "/components/navigation-bar/navigation-bar",
+    "template-card": "/components/template-card/template-card",
+    "share-sheet": "/components/share-sheet/share-sheet"
   }
 }

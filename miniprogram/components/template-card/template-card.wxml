@@ -1,0 +1,8 @@
+<view class="template-card" bindtap="onTap">
+  <view class="template-card-bg" style="background: {{gradientStr}};">
+    <view class="template-card-overlay" wx:if="{{template.background.overlayOpacity}}"
+      style="background: rgba(0,0,0,{{template.background.overlayOpacity}});"></view>
+    <text class="template-card-text">{{template.defaultText}}</text>
+  </view>
+  <text class="template-card-name">{{template.name}}</text>
+</view>

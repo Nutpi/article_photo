@@ -1,9 +1,47 @@
 <view class="page-wrapper">
   <navigation-bar title="文章配图助手" back="{{false}}" color="rgba(255,255,255,0.9)" background="transparent"></navigation-bar>
 
-  <view class="main-container">
+  <!-- 模式切换 Tab -->
+  <view class="mode-tabs">
+    <view class="mode-tab {{appMode === 'template' ? 'active' : ''}}" bindtap="onModeSwitch" data-mode="template">
+      <text class="mode-tab-icon">📋</text>
+      <text class="mode-tab-text">模板</text>
+    </view>
+    <view class="mode-tab {{appMode === 'editor' ? 'active' : ''}}" bindtap="onModeSwitch" data-mode="editor">
+      <text class="mode-tab-icon">🎨</text>
+      <text class="mode-tab-text">编辑</text>
+    </view>
+  </view>
+
+  <!-- ===== 模板浏览器模式 ===== -->
+  <view class="template-browser" wx:if="{{appMode === 'template'}}">
+    <!-- 分类标签 -->
+    <scroll-view class="category-tabs" scroll-x enhanced show-scrollbar="{{false}}">
+      <view class="category-chip {{selectedCategoryId === 'all' ? 'active' : ''}}"
+        bindtap="onCategorySelect" data-id="all">
+        <text>全部</text>
+      </view>
+      <view wx:for="{{categoryList}}" wx:key="id"
+        class="category-chip {{selectedCategoryId === item.id ? 'active' : ''}}"
+        bindtap="onCategorySelect" data-id="{{item.id}}">
+        <text>{{item.icon}} {{item.name}}</text>
+      </view>
+    </scroll-view>
+
+    <!-- 模板网格 -->
+    <scroll-view class="template-grid-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+      <view class="template-grid">
+        <view wx:for="{{filteredTemplates}}" wx:key="id" class="template-grid-item">
+          <template-card template="{{item}}" bind:apply="onTemplateApply" />
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- ===== 编辑器模式 ===== -->
+  <view class="main-container" wx:if="{{appMode === 'editor'}}">
     <!-- 比例选择条 -->
-    <view class="ratio-bar" wx:if="{{imageUrl}}">
+    <view class="ratio-bar" wx:if="{{imageUrl || useGradientBg}}">
       <view wx:for="{{ratioList}}" wx:key="name"
         class="ratio-item {{selectedRatio === item.name ? 'active' : ''}}"
         bindtap="onRatioSelect" data-name="{{item.name}}">
@@ -15,8 +53,15 @@
 
     <!-- 画布区域 -->
     <view class="canvas-area">
-      <view class="canvas-wrapper" style="width:{{canvasWidth}}px;height:{{canvasHeight}}px;">
-        <image wx:if="{{imageUrl}}" class="bg-image" src="{{imageUrl}}" mode="aspectFill"></image>
+      <view class="canvas-wrapper" style="width:{{canvasWidth}}px;height:{{canvasHeight}}px;"
+        bindtouchstart="onImageTouchStart" bindtouchmove="onImageTouchMove" bindtouchend="onImageTouchEnd">
+        <image wx:if="{{imageUrl}}" class="bg-image" src="{{imageUrl}}"
+          style="width:{{imgDisplayW}}px;height:{{imgDisplayH}}px;margin-left:{{imgOffsetX}}px;margin-top:{{imgOffsetY}}px;"
+          catchtouchmove="preventMove"></image>
+
+        <!-- 渐变背景（模板模式，无用户图片时） -->
+        <view wx:elif="{{useGradientBg && gradientBgStr}}" class="gradient-bg"
+          style="background: {{gradientBgStr}};"></view>
 
         <view wx:else class="placeholder" bindtap="onChooseImage">
           <view class="placeholder-glow"></view>
@@ -38,8 +83,8 @@
     </view>
   </view>
 
-  <!-- 底部 Dock -->
-  <view class="bottom-dock">
+  <!-- 底部 Dock（仅编辑模式显示） -->
+  <view class="bottom-dock" wx:if="{{appMode === 'editor'}}">
     <view class="dock-inner">
       <view class="dock-btn" bindtap="onChooseImage">
         <view class="dock-icon-wrapper">
@@ -119,6 +164,12 @@
       </view>
     </view>
   </view>
+
+  <!-- 分享面板 -->
+  <share-sheet wx:if="{{showShareSheet}}"
+    bind:savewatermark="onSaveWatermark"
+    bind:close="onCloseShareSheet">
+  </share-sheet>
 
   <canvas type="2d" id="exportCanvas" class="export-canvas"></canvas>
 </view>
