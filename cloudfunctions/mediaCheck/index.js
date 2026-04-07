@@ -3,30 +3,38 @@ cloud.init({ env: cloud.DYNAMIC_CURRENT_ENV })
 
 exports.main = async (event, context) => {
   const { fileID } = event
-  const wxContext = cloud.getWXContext()
 
   try {
-    // 获取文件临时下载链接（供微信服务器下载检测）
-    const tempUrlRes = await cloud.getTempFileURL({ fileList: [fileID] })
-    const mediaUrl = tempUrlRes.fileList[0].tempFileURL
+    console.log('[imgSecCheck] 开始检测图片:', fileID)
 
-    if (!mediaUrl) {
-      return { submitted: false, errcode: -1, errmsg: '获取文件链接失败' }
+    // 从云存储下载文件
+    const fileRes = await cloud.downloadFile({ fileID })
+    const buffer = fileRes.fileContent
+
+    if (!buffer) {
+      return { pass: false, errcode: -1, errmsg: '文件下载失败' }
     }
 
-    // 调用 2.0 版本异步图片检测接口
-    const result = await cloud.openapi.security.mediaCheckAsync({
-      openid: wxContext.OPENID,
-      media_url: mediaUrl,
-      media_type: 2,
-      version: 2,
-      scene: 1
+    // 根据扩展名确定 contentType
+    const ext = (fileID.split('.').pop() || 'jpg').toLowerCase()
+    const mimeMap = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', bmp: 'image/bmp', gif: 'image/gif' }
+
+    // 调用同步图片安全检测
+    const result = await cloud.openapi.security.imgSecCheck({
+      media: {
+        contentType: mimeMap[ext] || 'image/jpeg',
+        value: buffer
+      }
     })
 
-    const submitted = result.errCode === 0
-    return { submitted, errcode: result.errCode, errmsg: result.errMsg, trace_id: result.trace_id }
+    console.log('[imgSecCheck] 检测结果:', result)
+    return { pass: result.errCode === 0, errcode: result.errCode, errmsg: result.errMsg }
   } catch (err) {
-    console.error('mediaCheckAsync error:', err)
-    return { submitted: false, errcode: -1, errmsg: err.message || 'check failed' }
+    console.error('[imgSecCheck] error:', err)
+    // 87014 表示内容不合规
+    if (err.errCode === 87014) {
+      return { pass: false, errcode: 87014, errmsg: '图片内容不合规' }
+    }
+    return { pass: false, errcode: -1, errmsg: err.errMsg || err.message || '检测失败' }
   }
 }
