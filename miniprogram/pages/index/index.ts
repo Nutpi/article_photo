@@ -195,6 +195,13 @@ Component({
     };
   },
 
+  // 页面生命周期
+  pageLifetimes: {
+    show() {
+      wx.showShareMenu({ withShareTicket: true, menus: ['shareAppMessage', 'shareTimeline'] });
+    }
+  },
+
   methods: {
     // ===== 模式切换 =====
     onModeSwitch(e: any) {
