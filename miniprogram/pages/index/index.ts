@@ -49,6 +49,13 @@ interface TouchPoint {
   y: number;
 }
 
+interface TextBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
 // --- 预设数据 ---
 
 const RATIO_LIST: RatioPreset[] = [
@@ -93,7 +100,6 @@ const THEME_LIST: StyleTheme[] = [
   }
 ];
 
-// 渐变模板无图片时的默认导出尺寸
 const DEFAULT_EXPORT_SIZES: Record<string, { w: number; h: number }> = {
   '1:1':  { w: 1080, h: 1080 },
   '3:4':  { w: 1080, h: 1440 },
@@ -101,8 +107,9 @@ const DEFAULT_EXPORT_SIZES: Record<string, { w: number; h: number }> = {
   '9:16': { w: 1080, h: 1920 },
 };
 
-// --- 工具函数：CSS 渐变角度 → Canvas 坐标 ---
-function gradientAngleToCoords(angleDeg: number, w: number, h: number): { x0: number; y0: number; x1: number; y1: number } {
+// --- 工具函数 ---
+
+function gradientAngleToCoords(angleDeg: number, w: number, h: number) {
   const angle = (angleDeg - 90) * Math.PI / 180;
   const cx = w / 2;
   const cy = h / 2;
@@ -114,6 +121,33 @@ function gradientAngleToCoords(angleDeg: number, w: number, h: number): { x0: nu
     y1: cy + Math.sin(angle) * len,
   };
 }
+
+// Canvas 文字自动换行：按 maxWidth 逐字符切分，返回行数组
+function wrapTextLines(ctx: any, text: string, maxWidth: number): string[] {
+  const paragraphs = text.split('\n');
+  const allLines: string[] = [];
+  for (const para of paragraphs) {
+    if (para === '') {
+      allLines.push('');
+      continue;
+    }
+    let line = '';
+    for (let i = 0; i < para.length; i++) {
+      const testLine = line + para[i];
+      const metrics = ctx.measureText(testLine);
+      if (metrics.width > maxWidth && line.length > 0) {
+        allLines.push(line);
+        line = para[i];
+      } else {
+        line = testLine;
+      }
+    }
+    if (line) allLines.push(line);
+  }
+  return allLines;
+}
+
+// --- 组件 ---
 
 Component({
   data: {
@@ -134,16 +168,13 @@ Component({
     imageInfo: null as ImageInfo | null,
     cropInfo: null as CropInfo | null,
     checkedImageFileID: '',
+    loadedImage: null as any, // Canvas createImage 缓存
 
     // --- 画布 ---
     canvasWidth: 300,
     canvasHeight: 400,
 
     // --- 图片拖动裁切 ---
-    imgDisplayW: 0,
-    imgDisplayH: 0,
-    imgOffsetX: 0,
-    imgOffsetY: 0,
     imageTouchStart: null as TouchPoint | null,
     imageCropStart: null as { x: number; y: number } | null,
 
@@ -171,22 +202,27 @@ Component({
     // --- UI ---
     showEditPanel: false,
     hasText: false,
+    hasContent: false, // 是否有图片或渐变背景
 
     // --- 拖拽状态 ---
     touchStartPos: null as TouchPoint | null,
     textStartPos: null as { x: number; y: number } | null,
+    isDraggingText: false,
+    isDraggingImage: false,
 
     // --- 渐变背景 ---
     useGradientBg: false,
     gradientBackground: null as TemplateBackground | null,
     gradientBgStr: '',
 
+    // --- 文字边界框（用于触摸检测） ---
+    textBounds: null as TextBounds | null,
+
     // --- 分享 ---
     showShareSheet: false,
     lastSavedFilePath: '',
   },
 
-  // 分享配置（Component 级别）
   onShareAppMessage() {
     return {
       title: '文章配图助手 - 一键生成精美配图',
@@ -195,18 +231,44 @@ Component({
     };
   },
 
-  // 页面生命周期
   pageLifetimes: {
     show() {
       wx.showShareMenu({ withShareTicket: true, menus: ['shareAppMessage', 'shareTimeline'] });
     }
   },
 
+  lifetimes: {
+    attached() {
+      // 获取预览 Canvas
+      this.getPreviewCanvas();
+    }
+  },
+
   methods: {
+    // ===== 获取预览 Canvas =====
+    getPreviewCanvas() {
+      const query = wx.createSelectorQuery().in(this);
+      query.select('#previewCanvas')
+        .fields({ node: true, size: true })
+        .exec((res) => {
+          if (res[0] && res[0].node) {
+            this._previewCanvas = res[0].node;
+            this._previewCtx = this._previewCanvas.getContext('2d');
+          }
+        });
+    },
+
     // ===== 模式切换 =====
     onModeSwitch(e: any) {
       const mode = e.currentTarget.dataset.mode;
       this.setData({ appMode: mode });
+      if (mode === 'editor') {
+        // 切到编辑模式时，等 DOM 更新后重绘
+        setTimeout(() => {
+          this.getPreviewCanvas();
+          setTimeout(() => this.drawPreview(), 100);
+        }, 100);
+      }
     },
 
     // ===== 分类选择 =====
@@ -234,24 +296,28 @@ Component({
 
       this.setData({
         appMode: 'editor',
-        // 重置图片
         imageUrl: '',
         imageInfo: null,
         cropInfo: null,
         checkedImageFileID: '',
-        // 应用模板设置
+        loadedImage: null,
         selectedRatio: tpl.ratio,
         selectedTextPreset: tpl.textPreset,
         selectedTheme: tpl.theme,
         textContent: tpl.defaultText,
         hasText: true,
-        // 渐变背景
+        hasContent: true,
         useGradientBg: true,
         gradientBackground: bg,
         gradientBgStr,
       });
 
-      this.recalculate();
+      setTimeout(() => {
+        this.getPreviewCanvas();
+        setTimeout(() => {
+          this.recalculate();
+        }, 100);
+      }, 100);
     },
 
     // ===== 图片上传 =====
@@ -268,7 +334,6 @@ Component({
       });
     },
 
-    // ===== 图片内容安全检测（同步） =====
     checkMediaSecurity(filePath: string) {
       const uploadAndCheck = (localPath: string) => {
         const ext = localPath.split('.').pop() || 'jpg';
@@ -279,7 +344,6 @@ Component({
           filePath: localPath,
           success: (uploadRes) => {
             const fileID = uploadRes.fileID;
-
             wx.showLoading({ title: '正在检测...', mask: true });
 
             wx.cloud.callFunction({
@@ -295,6 +359,7 @@ Component({
                     checkedImageFileID: fileID,
                     useGradientBg: false,
                     gradientBackground: null,
+                    hasContent: true,
                   });
 
                   wx.getImageInfo({
@@ -349,18 +414,16 @@ Component({
 
     // ===== 比例选择 =====
     onRatioSelect(e: any) {
-      const ratioName = e.currentTarget.dataset.name;
-      this.setData({ selectedRatio: ratioName });
+      this.setData({ selectedRatio: e.currentTarget.dataset.name });
       this.recalculate();
     },
 
-    // ===== 核心计算：画布尺寸 + 裁切区域 =====
+    // ===== 核心计算 =====
     recalculate() {
       const { imageInfo, selectedRatio } = this.data;
       const ratio = RATIO_LIST.find(r => r.name === selectedRatio)!;
       const targetRatio = ratio.widthRatio / ratio.heightRatio;
 
-      // 计算画布显示尺寸
       const systemInfo = wx.getSystemInfoSync();
       const maxWidth = systemInfo.windowWidth - 48;
       const maxHeight = systemInfo.windowHeight - 380;
@@ -387,277 +450,87 @@ Component({
       canvasWidth = Math.floor(canvasWidth);
       canvasHeight = Math.floor(canvasHeight);
 
-      // 有图片时计算裁切区域
       if (imageInfo) {
         const imgRatio = imageInfo.width / imageInfo.height;
         let cropInfo: CropInfo;
-
         if (imgRatio > targetRatio) {
           const cropH = imageInfo.height;
           const cropW = imageInfo.height * targetRatio;
-          cropInfo = {
-            x: Math.floor((imageInfo.width - cropW) / 2),
-            y: 0,
-            w: Math.floor(cropW),
-            h: cropH
-          };
+          cropInfo = { x: Math.floor((imageInfo.width - cropW) / 2), y: 0, w: Math.floor(cropW), h: cropH };
         } else {
           const cropW = imageInfo.width;
           const cropH = imageInfo.width / targetRatio;
-          cropInfo = {
-            x: 0,
-            y: Math.floor((imageInfo.height - cropH) / 2),
-            w: cropW,
-            h: Math.floor(cropH)
-          };
+          cropInfo = { x: 0, y: Math.floor((imageInfo.height - cropH) / 2), w: cropW, h: Math.floor(cropH) };
         }
-
         this.setData({ canvasWidth, canvasHeight, cropInfo });
-        this.updateImageDisplay();
       } else {
         this.setData({ canvasWidth, canvasHeight, cropInfo: null });
       }
 
       this.applyPresetAndTheme();
+      this.drawPreview();
     },
 
-    // ===== 应用预设 + 主题到画布 =====
     applyPresetAndTheme() {
       const { canvasWidth, canvasHeight, selectedTextPreset, selectedTheme } = this.data;
-
       const preset = TEXT_PRESET_LIST.find(p => p.name === selectedTextPreset)!;
       const theme = THEME_LIST.find(t => t.name === selectedTheme)!;
 
-      const actualFontSize = Math.round(canvasWidth * preset.fontSizePercent);
-      const actualLineHeight = preset.lineHeight;
-      const actualFontWeight = preset.fontWeight;
-      const actualTextAlign = preset.textAlign;
-      const actualFontFamily = theme.fontFamily;
-      const actualColor = theme.color;
-      const actualGlowEffect = theme.glowEffect;
-      const actualTextShadow = theme.textShadow;
-
-      const textX = preset.textAlign === 'center' ? canvasWidth / 2 : canvasWidth * 0.1;
-      const textY = canvasHeight * preset.positionY;
-
       this.setData({
-        textX,
-        textY,
-        actualFontSize,
-        actualLineHeight,
-        actualFontWeight,
-        actualTextAlign,
-        actualFontFamily,
-        actualColor,
-        actualGlowEffect,
-        actualTextShadow
+        textX: preset.textAlign === 'center' ? canvasWidth / 2 : canvasWidth * 0.1,
+        textY: canvasHeight * preset.positionY,
+        actualFontSize: Math.round(canvasWidth * preset.fontSizePercent),
+        actualLineHeight: preset.lineHeight,
+        actualFontWeight: preset.fontWeight,
+        actualTextAlign: preset.textAlign,
+        actualFontFamily: theme.fontFamily,
+        actualColor: theme.color,
+        actualGlowEffect: theme.glowEffect,
+        actualTextShadow: theme.textShadow,
       });
     },
 
-    // ===== 根据裁切区域计算图片显示尺寸和偏移 =====
-    updateImageDisplay() {
-      const { cropInfo, canvasWidth, canvasHeight } = this.data;
-      if (!cropInfo) return;
+    // ===== 统一绘制函数 =====
+    renderCanvas(
+      canvas: any,
+      width: number,
+      height: number,
+      data: any,
+      image: any,
+      callback?: () => void
+    ) {
+      const ctx = canvas.getContext('2d');
+      const dpr = 1; // 预览用 1x，导出用原始像素
 
-      const scaleX = canvasWidth / cropInfo.w;
-      const scaleY = canvasHeight / cropInfo.h;
-      const scale = Math.max(scaleX, scaleY);
+      canvas.width = width;
+      canvas.height = height;
+      ctx.clearRect(0, 0, width, height);
 
-      const { imageInfo } = this.data;
-      if (!imageInfo) return;
+      const scale = 1; // 统一用 width/height 控制大小
 
-      const imgDisplayW = imageInfo.width * scale;
-      const imgDisplayH = imageInfo.height * scale;
-      const imgOffsetX = -cropInfo.x * scale;
-      const imgOffsetY = -cropInfo.y * scale;
-
-      this.setData({ imgDisplayW, imgDisplayH, imgOffsetX, imgOffsetY });
-    },
-
-    // ===== 图片拖动裁切 =====
-    onImageTouchStart(e: any) {
-      if (this.data.touchStartPos) return;
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        this.setData({
-          imageTouchStart: { x: touch.clientX, y: touch.clientY },
-          imageCropStart: this.data.cropInfo ? { x: this.data.cropInfo.x, y: this.data.cropInfo.y } : null
-        });
-      }
-    },
-
-    onImageTouchMove(e: any) {
-      if (!this.data.imageTouchStart || !this.data.imageCropStart || !this.data.cropInfo || !this.data.imageInfo) return;
-      if (e.touches.length !== 1) return;
-
-      const touch = e.touches[0];
-      const deltaX = touch.clientX - this.data.imageTouchStart.x;
-      const deltaY = touch.clientY - this.data.imageTouchStart.y;
-
-      const { canvasWidth, canvasHeight, imageInfo } = this.data;
-      const cropInfo = this.data.cropInfo;
-
-      const scale = Math.max(canvasWidth / cropInfo.w, canvasHeight / cropInfo.h);
-
-      const cropDeltaX = -deltaX / scale;
-      const cropDeltaY = -deltaY / scale;
-
-      let newX = this.data.imageCropStart.x + cropDeltaX;
-      let newY = this.data.imageCropStart.y + cropDeltaY;
-
-      newX = Math.max(0, Math.min(imageInfo!.width - cropInfo.w, newX));
-      newY = Math.max(0, Math.min(imageInfo!.height - cropInfo.h, newY));
-
-      this.setData({ 'cropInfo.x': Math.round(newX), 'cropInfo.y': Math.round(newY) });
-      this.updateImageDisplay();
-    },
-
-    onImageTouchEnd() {
-      this.setData({ imageTouchStart: null, imageCropStart: null });
-    },
-
-    // ===== 文字预设选择 =====
-    onTextPresetSelect(e: any) {
-      const presetName = e.currentTarget.dataset.name;
-      this.setData({ selectedTextPreset: presetName });
-      this.applyPresetAndTheme();
-    },
-
-    // ===== 风格主题选择 =====
-    onThemeSelect(e: any) {
-      const themeName = e.currentTarget.dataset.name;
-      this.setData({ selectedTheme: themeName });
-      this.applyPresetAndTheme();
-    },
-
-    // ===== 加字按钮 =====
-    onAddText() {
-      if (!this.data.imageUrl && !this.data.useGradientBg) {
-        wx.showToast({ title: '请先选择模板或上传图片', icon: 'none' });
-        return;
-      }
-
-      const hasText = this.data.hasText;
-      if (!hasText) {
-        this.setData({
-          textContent: '点击编辑文字',
-          hasText: true
-        });
-        this.applyPresetAndTheme();
-      }
-      this.setData({ showEditPanel: true });
-    },
-
-    // ===== 文字点击 =====
-    onTextTap() {
-      if (this.data.hasText) {
-        this.setData({ showEditPanel: true });
-      }
-    },
-
-    // ===== 拖拽 =====
-    onTextTouchStart(e: any) {
-      if (e.touches.length === 1) {
-        const touch = e.touches[0];
-        this.setData({
-          touchStartPos: { x: touch.clientX, y: touch.clientY },
-          textStartPos: { x: this.data.textX, y: this.data.textY }
-        });
-      }
-    },
-
-    onTextTouchMove(e: any) {
-      if (e.touches.length === 1 && this.data.touchStartPos && this.data.textStartPos) {
-        const touch = e.touches[0];
-        const deltaX = touch.clientX - this.data.touchStartPos.x;
-        const deltaY = touch.clientY - this.data.touchStartPos.y;
-
-        let newX = this.data.textStartPos.x + deltaX;
-        let newY = this.data.textStartPos.y + deltaY;
-
-        newX = Math.max(0, Math.min(this.data.canvasWidth, newX));
-        newY = Math.max(0, Math.min(this.data.canvasHeight, newY));
-
-        const centerX = this.data.canvasWidth / 2;
-        const centerY = this.data.canvasHeight / 2;
-        const snapThreshold = 15;
-
-        if (Math.abs(newX - centerX) < snapThreshold) {
-          newX = centerX;
-          wx.vibrateShort({ type: 'light' });
+      const drawContent = () => {
+        // 绘制文字
+        if (data.hasText && data.textContent) {
+          this.renderText(ctx, width, height, data, scale);
         }
-        if (Math.abs(newY - centerY) < snapThreshold) {
-          newY = centerY;
-          wx.vibrateShort({ type: 'light' });
-        }
+        if (callback) callback();
+      };
 
-        this.setData({ textX: newX, textY: newY });
+      // 绘制背景
+      if (image && data.imageInfo && data.cropInfo) {
+        const ci = data.cropInfo;
+        ctx.drawImage(image, ci.x, ci.y, ci.w, ci.h, 0, 0, width, height);
+        drawContent();
+      } else if (data.useGradientBg && data.gradientBackground) {
+        this.renderGradient(ctx, data.gradientBackground, width, height);
+        drawContent();
+      } else {
+        drawContent();
       }
     },
 
-    onTextTouchEnd() {
-      this.setData({
-        touchStartPos: null,
-        textStartPos: null
-      });
-    },
-
-    // ===== 文字输入 =====
-    onTextInput(e: any) {
-      this.setData({ textContent: e.detail.value });
-    },
-
-    // ===== 面板操作 =====
-    onClosePanel() {
-      this.setData({ showEditPanel: false });
-    },
-
-    onDeleteText() {
-      this.setData({
-        textContent: '',
-        hasText: false,
-        showEditPanel: false
-      });
-    },
-
-    preventMove() {},
-
-    // ===== 重置 =====
-    onReset() {
-      wx.showModal({
-        title: '确认重置',
-        content: '确定要清空所有内容吗？',
-        success: (res) => {
-          if (res.confirm) {
-            this.setData({
-              imageUrl: '',
-              imageInfo: null,
-              cropInfo: null,
-              canvasWidth: 300,
-              canvasHeight: 400,
-              imgDisplayW: 0,
-              imgDisplayH: 0,
-              imgOffsetX: 0,
-              imgOffsetY: 0,
-              selectedRatio: '3:4',
-              selectedTextPreset: '大字标题',
-              selectedTheme: '极简',
-              textContent: '',
-              hasText: false,
-              textX: 150,
-              textY: 200,
-              showEditPanel: false,
-              useGradientBg: false,
-              gradientBackground: null,
-              gradientBgStr: '',
-            });
-          }
-        }
-      });
-    },
-
-    // ===== 在 Canvas 上绘制渐变背景 =====
-    drawGradientBg(ctx: any, bg: TemplateBackground, w: number, h: number) {
+    // 渲染渐变背景
+    renderGradient(ctx: any, bg: TemplateBackground, w: number, h: number) {
       if (bg.type === 'gradient' && bg.colors && bg.colors.length >= 2) {
         const coords = gradientAngleToCoords(bg.direction || 180, w, h);
         const gradient = ctx.createLinearGradient(coords.x0, coords.y0, coords.x1, coords.y1);
@@ -670,57 +543,305 @@ Component({
         ctx.fillStyle = bg.solidColor || '#000000';
         ctx.fillRect(0, 0, w, h);
       }
-
-      // 暗色叠加
       if (bg.overlayOpacity && bg.overlayOpacity > 0) {
         ctx.fillStyle = `rgba(0,0,0,${bg.overlayOpacity})`;
         ctx.fillRect(0, 0, w, h);
       }
     },
 
-    // ===== 在 Canvas 上绘制文字 =====
-    drawTextOnCanvas(ctx: any, data: any, exportWidth: number, exportHeight: number, canvasW: number, canvasH: number) {
-      if (!data.hasText || !data.textContent) return;
-
+    // 渲染文字（统一用于预览和导出）
+    renderText(ctx: any, canvasW: number, canvasH: number, data: any, scale: number) {
       const theme = THEME_LIST.find(t => t.name === data.selectedTheme)!;
-      const scaleX = exportWidth / canvasW;
-      const scaleY = exportHeight / canvasH;
-
-      const scaledFontSize = Math.round(data.actualFontSize * scaleX);
+      const fontSize = data.actualFontSize * scale;
       const weightStr = data.actualFontWeight === 'bold' ? 'bold' : 'normal';
-      ctx.font = `${weightStr} ${scaledFontSize}px "${data.actualFontFamily}", sans-serif`;
-      ctx.textAlign = data.actualTextAlign === 'center' ? 'center' : 'left';
-      ctx.textBaseline = 'middle';
-      ctx.fillStyle = data.actualColor;
 
+      ctx.font = `${weightStr} ${fontSize}px "${data.actualFontFamily}", sans-serif`;
+      ctx.fillStyle = data.actualColor;
+      ctx.textBaseline = 'middle';
+
+      const textAlign = data.actualTextAlign || 'center';
+      ctx.textAlign = textAlign;
+
+      // 文字最大宽度 = 画布宽度的 96%
+      const maxTextWidth = canvasW * 0.96;
+
+      // 自动换行
+      const lines = wrapTextLines(ctx, data.textContent, maxTextWidth);
+      const lineHeightPx = fontSize * data.actualLineHeight;
+      const totalTextHeight = lines.length * lineHeightPx;
+
+      // 文字锚点位置
+      const anchorX = data.textX * scale;
+      const anchorY = data.textY * scale;
+
+      // 起始 Y（让整段文字以 anchorY 为中心）
+      const startY = anchorY - totalTextHeight / 2 + lineHeightPx / 2;
+
+      // 发光效果
       if (data.actualGlowEffect) {
         ctx.shadowColor = theme.glowColor;
-        ctx.shadowBlur = theme.glowBlur * scaleX;
+        ctx.shadowBlur = theme.glowBlur * scale;
         ctx.shadowOffsetX = 0;
         ctx.shadowOffsetY = 0;
       }
 
-      const lines = data.textContent.split('\n');
-      const lineHeightPx = scaledFontSize * data.actualLineHeight;
-      const totalTextHeight = lines.length * lineHeightPx;
-      const scaledCenterX = data.textX * scaleX;
-      const scaledCenterY = data.textY * scaleY;
-      const startY = scaledCenterY - totalTextHeight / 2 + lineHeightPx / 2;
-
       lines.forEach((line: string, i: number) => {
         const lineY = startY + i * lineHeightPx;
-        ctx.fillText(line, scaledCenterX, lineY);
-
+        ctx.fillText(line, anchorX, lineY);
         if (data.actualGlowEffect) {
-          ctx.shadowBlur = theme.glowBlur * scaleX * 2;
-          ctx.fillText(line, scaledCenterX, lineY);
-          ctx.shadowBlur = theme.glowBlur * scaleX;
+          ctx.shadowBlur = theme.glowBlur * scale * 2;
+          ctx.fillText(line, anchorX, lineY);
+          ctx.shadowBlur = theme.glowBlur * scale;
         }
       });
 
-      // 清除阴影
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
+
+      // 保存文字边界框（用于触摸检测，仅在预览时）
+      if (scale === 1) {
+        let maxLineWidth = 0;
+        lines.forEach((line: string) => {
+          const w = ctx.measureText(line).width;
+          if (w > maxLineWidth) maxLineWidth = w;
+        });
+
+        const boundsX = textAlign === 'center'
+          ? anchorX - maxLineWidth / 2
+          : anchorX;
+        const boundsY = anchorY - totalTextHeight / 2;
+
+        this.setData({
+          textBounds: {
+            x: boundsX,
+            y: boundsY,
+            w: maxLineWidth,
+            h: totalTextHeight,
+          }
+        });
+      }
+    },
+
+    // ===== 绘制预览 =====
+    drawPreview() {
+      if (!this._previewCanvas) return;
+
+      const { canvasWidth, canvasHeight, imageInfo, hasContent } = this.data;
+      if (!hasContent) return;
+
+      const canvas = this._previewCanvas;
+      const dpr = wx.getWindowInfo().pixelRatio || 2;
+
+      // 预览 Canvas 用物理像素绘制，保证清晰
+      canvas.width = canvasWidth * dpr;
+      canvas.height = canvasHeight * dpr;
+
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+
+      // 清空
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+
+      const drawContent = () => {
+        if (this.data.hasText && this.data.textContent) {
+          this.renderText(ctx, canvasWidth, canvasHeight, this.data, 1);
+        }
+      };
+
+      if (imageInfo && this._loadedImage) {
+        const ci = this.data.cropInfo;
+        if (ci) {
+          ctx.drawImage(this._loadedImage, ci.x, ci.y, ci.w, ci.h, 0, 0, canvasWidth, canvasHeight);
+        }
+        drawContent();
+      } else if (this.data.useGradientBg && this.data.gradientBackground) {
+        this.renderGradient(ctx, this.data.gradientBackground, canvasWidth, canvasHeight);
+        drawContent();
+      } else if (imageInfo) {
+        // 图片还没加载完，先加载
+        this.loadImageForPreview();
+      } else {
+        drawContent();
+      }
+    },
+
+    // 加载图片用于预览
+    loadImageForPreview() {
+      if (!this._previewCanvas || !this.data.imageInfo) return;
+
+      const img = this._previewCanvas.createImage();
+      img.src = this.data.imageInfo.path;
+
+      img.onload = () => {
+        this._loadedImage = img;
+        this.drawPreview();
+      };
+    },
+
+    // ===== 触摸事件（统一处理） =====
+    onCanvasTouchStart(e: any) {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+
+      // 判断是否点在文字上
+      if (this.data.hasText && this.data.textBounds) {
+        const b = this.data.textBounds;
+        const rect = e.currentTarget ? null : null;
+        // touch 的 clientX/Y 是相对屏幕的，需要转换为相对 canvas 的坐标
+        const query = wx.createSelectorQuery().in(this);
+        query.select('.canvas-wrapper').boundingClientRect((rect: any) => {
+          if (!rect) return;
+          const localX = touch.clientX - rect.left;
+          const localY = touch.clientY - rect.top;
+
+          // 检查是否在文字边界框内（加一些容差）
+          const padding = 20;
+          if (localX >= b.x - padding && localX <= b.x + b.w + padding &&
+              localY >= b.y - padding && localY <= b.y + b.h + padding) {
+            this.setData({
+              isDraggingText: true,
+              touchStartPos: { x: touch.clientX, y: touch.clientY },
+              textStartPos: { x: this.data.textX, y: this.data.textY },
+            });
+          } else {
+            this.startImageDrag(touch);
+          }
+        }).exec();
+      } else {
+        this.startImageDrag(touch);
+      }
+    },
+
+    startImageDrag(touch: any) {
+      if (!this.data.cropInfo || !this.data.imageInfo) return;
+      this.setData({
+        isDraggingImage: true,
+        imageTouchStart: { x: touch.clientX, y: touch.clientY },
+        imageCropStart: this.data.cropInfo ? { x: this.data.cropInfo.x, y: this.data.cropInfo.y } : null,
+      });
+    },
+
+    onCanvasTouchMove(e: any) {
+      if (e.touches.length !== 1) return;
+      const touch = e.touches[0];
+
+      if (this.data.isDraggingText && this.data.touchStartPos && this.data.textStartPos) {
+        const deltaX = touch.clientX - this.data.touchStartPos.x;
+        const deltaY = touch.clientY - this.data.touchStartPos.y;
+
+        let newX = this.data.textStartPos.x + deltaX;
+        let newY = this.data.textStartPos.y + deltaY;
+
+        newX = Math.max(0, Math.min(this.data.canvasWidth, newX));
+        newY = Math.max(0, Math.min(this.data.canvasHeight, newY));
+
+        // 吸附中心
+        const centerX = this.data.canvasWidth / 2;
+        const centerY = this.data.canvasHeight / 2;
+        if (Math.abs(newX - centerX) < 15) { newX = centerX; wx.vibrateShort({ type: 'light' }); }
+        if (Math.abs(newY - centerY) < 15) { newY = centerY; wx.vibrateShort({ type: 'light' }); }
+
+        this.setData({ textX: newX, textY: newY });
+        this.drawPreview();
+
+      } else if (this.data.isDraggingImage && this.data.imageTouchStart && this.data.imageCropStart && this.data.cropInfo && this.data.imageInfo) {
+        const deltaX = touch.clientX - this.data.imageTouchStart.x;
+        const deltaY = touch.clientY - this.data.imageTouchStart.y;
+
+        const { canvasWidth, canvasHeight, imageInfo } = this.data;
+        const cropInfo = this.data.cropInfo;
+        const scale = Math.max(canvasWidth / cropInfo.w, canvasHeight / cropInfo.h);
+
+        let newX = this.data.imageCropStart.x + (-deltaX / scale);
+        let newY = this.data.imageCropStart.y + (-deltaY / scale);
+
+        newX = Math.max(0, Math.min(imageInfo!.width - cropInfo.w, newX));
+        newY = Math.max(0, Math.min(imageInfo!.height - cropInfo.h, newY));
+
+        this.setData({ 'cropInfo.x': Math.round(newX), 'cropInfo.y': Math.round(newY) });
+        this.drawPreview();
+      }
+    },
+
+    onCanvasTouchEnd() {
+      this.setData({
+        isDraggingText: false,
+        isDraggingImage: false,
+        touchStartPos: null,
+        textStartPos: null,
+        imageTouchStart: null,
+        imageCropStart: null,
+      });
+    },
+
+    // ===== 文字预设 / 主题选择 =====
+    onTextPresetSelect(e: any) {
+      this.setData({ selectedTextPreset: e.currentTarget.dataset.name });
+      this.applyPresetAndTheme();
+      this.drawPreview();
+    },
+
+    onThemeSelect(e: any) {
+      this.setData({ selectedTheme: e.currentTarget.dataset.name });
+      this.applyPresetAndTheme();
+      this.drawPreview();
+    },
+
+    // ===== 加字 =====
+    onAddText() {
+      if (!this.data.imageUrl && !this.data.useGradientBg) {
+        wx.showToast({ title: '请先选择模板或上传图片', icon: 'none' });
+        return;
+      }
+      if (!this.data.hasText) {
+        this.setData({ textContent: '点击编辑文字', hasText: true });
+        this.applyPresetAndTheme();
+      }
+      this.setData({ showEditPanel: true });
+      this.drawPreview();
+    },
+
+    onTextTap() {
+      if (this.data.hasText) {
+        this.setData({ showEditPanel: true });
+      }
+    },
+
+    // ===== 文字输入 =====
+    onTextInput(e: any) {
+      this.setData({ textContent: e.detail.value });
+      this.drawPreview();
+    },
+
+    onClosePanel() {
+      this.setData({ showEditPanel: false });
+    },
+
+    onDeleteText() {
+      this.setData({ textContent: '', hasText: false, showEditPanel: false });
+      this.drawPreview();
+    },
+
+    preventMove() {},
+
+    onReset() {
+      wx.showModal({
+        title: '确认重置',
+        content: '确定要清空所有内容吗？',
+        success: (res) => {
+          if (res.confirm) {
+            this.setData({
+              imageUrl: '', imageInfo: null, cropInfo: null,
+              canvasWidth: 300, canvasHeight: 400,
+              selectedRatio: '3:4', selectedTextPreset: '大字标题', selectedTheme: '极简',
+              textContent: '', hasText: false, hasContent: false,
+              showEditPanel: false,
+              useGradientBg: false, gradientBackground: null,
+              loadedImage: null,
+            });
+          }
+        }
+      });
     },
 
     // ===== 保存导出 =====
@@ -744,11 +865,8 @@ Component({
             }
 
             const canvas = res[0].node as any;
-            const ctx = canvas.getContext('2d');
-
             const { imageInfo, cropInfo, canvasWidth, canvasHeight, useGradientBg, gradientBackground } = this.data;
 
-            // 确定导出尺寸
             let exportWidth: number;
             let exportHeight: number;
 
@@ -756,39 +874,50 @@ Component({
               exportWidth = cropInfo.w;
               exportHeight = cropInfo.h;
             } else {
-              // 渐变模板，使用默认导出尺寸
               const defaultSize = DEFAULT_EXPORT_SIZES[this.data.selectedRatio] || { w: 1080, h: 1440 };
               exportWidth = defaultSize.w;
               exportHeight = defaultSize.h;
             }
 
+            // 计算缩放比：预览坐标 → 导出坐标
+            const exportScale = exportWidth / canvasWidth;
+
             canvas.width = exportWidth;
             canvas.height = exportHeight;
 
-            // 绘制背景
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, exportWidth, exportHeight);
+
+            const drawContent = () => {
+              if (this.data.hasText && this.data.textContent) {
+                // 构造导出用的 data，将坐标缩放到导出尺寸
+                const exportData = {
+                  ...this.data,
+                  textX: this.data.textX * exportScale,
+                  textY: this.data.textY * exportScale,
+                  actualFontSize: this.data.actualFontSize * exportScale,
+                };
+                this.renderText(ctx, exportWidth, exportHeight, exportData, exportScale);
+              }
+              this.doCanvasExport(canvas);
+            };
+
             if (imageInfo && imageInfo.path) {
-              // 有用户图片：绘制裁切后的图片
               const img = canvas.createImage();
               img.src = imageInfo.path;
-
               img.onload = () => {
-                ctx.drawImage(img, (cropInfo && cropInfo.x) || 0, (cropInfo && cropInfo.y) || 0,
-                  (cropInfo && cropInfo.w) || exportWidth, (cropInfo && cropInfo.h) || exportHeight,
-                  0, 0, exportWidth, exportHeight);
-
-                this.drawTextOnCanvas(ctx, this.data, exportWidth, exportHeight, this.data.canvasWidth, this.data.canvasHeight);
-                this.doCanvasExport(canvas);
+                if (cropInfo) {
+                  ctx.drawImage(img, cropInfo.x, cropInfo.y, cropInfo.w, cropInfo.h, 0, 0, exportWidth, exportHeight);
+                }
+                drawContent();
               };
-
               img.onerror = () => {
                 wx.hideLoading();
                 wx.showToast({ title: '图片加载失败', icon: 'error' });
               };
             } else if (useGradientBg && gradientBackground) {
-              // 渐变背景
-              this.drawGradientBg(ctx, gradientBackground, exportWidth, exportHeight);
-              this.drawTextOnCanvas(ctx, this.data, exportWidth, exportHeight, this.data.canvasWidth, this.data.canvasHeight);
-              this.doCanvasExport(canvas);
+              this.renderGradient(ctx, gradientBackground, exportWidth, exportHeight);
+              drawContent();
             } else {
               wx.hideLoading();
               wx.showToast({ title: '请先上传图片或选择模板', icon: 'none' });
@@ -800,23 +929,15 @@ Component({
       }
     },
 
-    // ===== Canvas 导出到相册 =====
-    doCanvasExport(canvas: any, callback?: (filePath: string) => void) {
+    doCanvasExport(canvas: any) {
       wx.canvasToTempFilePath({
         canvas: canvas,
         success: (saveRes) => {
-          if (callback) {
-            callback(saveRes.tempFilePath);
-            return;
-          }
           wx.saveImageToPhotosAlbum({
             filePath: saveRes.tempFilePath,
             success: () => {
               wx.hideLoading();
-              this.setData({
-                showShareSheet: true,
-                lastSavedFilePath: saveRes.tempFilePath,
-              });
+              this.setData({ showShareSheet: true, lastSavedFilePath: saveRes.tempFilePath });
             },
             fail: (err) => {
               wx.hideLoading();
@@ -825,9 +946,7 @@ Component({
                   title: '提示',
                   content: '需要您授权保存图片到相册',
                   success: (modalRes) => {
-                    if (modalRes.confirm) {
-                      wx.openSetting();
-                    }
+                    if (modalRes.confirm) wx.openSetting();
                   }
                 });
               } else {
@@ -860,8 +979,6 @@ Component({
             }
 
             const canvas = res[0].node as any;
-            const ctx = canvas.getContext('2d');
-
             const { imageInfo, cropInfo, canvasWidth, canvasHeight, useGradientBg, gradientBackground } = this.data;
 
             let exportWidth: number;
@@ -876,11 +993,22 @@ Component({
               exportHeight = defaultSize.h;
             }
 
+            const exportScale = exportWidth / canvasWidth;
             canvas.width = exportWidth;
             canvas.height = exportHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, exportWidth, exportHeight);
 
             const finalize = () => {
-              this.drawTextOnCanvas(ctx, this.data, exportWidth, exportHeight, this.data.canvasWidth, this.data.canvasHeight);
+              if (this.data.hasText && this.data.textContent) {
+                const exportData = {
+                  ...this.data,
+                  textX: this.data.textX * exportScale,
+                  textY: this.data.textY * exportScale,
+                  actualFontSize: this.data.actualFontSize * exportScale,
+                };
+                this.renderText(ctx, exportWidth, exportHeight, exportData, exportScale);
+              }
               this.drawWatermark(ctx, exportWidth, exportHeight);
               this.doCanvasExport(canvas);
             };
@@ -889,9 +1017,9 @@ Component({
               const img = canvas.createImage();
               img.src = imageInfo.path;
               img.onload = () => {
-                ctx.drawImage(img, (cropInfo && cropInfo.x) || 0, (cropInfo && cropInfo.y) || 0,
-                  (cropInfo && cropInfo.w) || exportWidth, (cropInfo && cropInfo.h) || exportHeight,
-                  0, 0, exportWidth, exportHeight);
+                if (cropInfo) {
+                  ctx.drawImage(img, cropInfo.x, cropInfo.y, cropInfo.w, cropInfo.h, 0, 0, exportWidth, exportHeight);
+                }
                 finalize();
               };
               img.onerror = () => {
@@ -899,7 +1027,7 @@ Component({
                 wx.showToast({ title: '图片加载失败', icon: 'error' });
               };
             } else if (useGradientBg && gradientBackground) {
-              this.drawGradientBg(ctx, gradientBackground, exportWidth, exportHeight);
+              this.renderGradient(ctx, gradientBackground, exportWidth, exportHeight);
               finalize();
             } else {
               wx.hideLoading();
@@ -912,33 +1040,28 @@ Component({
       }
     },
 
-    // ===== 绘制水印 =====
     drawWatermark(ctx: any, exportWidth: number, exportHeight: number) {
       const padding = Math.round(exportWidth * 0.03);
       const fontSize = Math.round(exportWidth * 0.022);
       const qrSize = Math.round(exportWidth * 0.06);
 
-      // 品牌名文字
       ctx.font = `normal ${fontSize}px sans-serif`;
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.fillText('文章配图助手', exportWidth - padding, exportHeight - padding - qrSize - 6);
 
-      // 尝试绘制二维码图片（如果存在）
-      const qrImg = ctx.createImage ? ctx.createImage() : null;
-      if (qrImg) {
-        qrImg.src = '/images/watermark-qr.png';
-        // 如果图片加载成功就绘制，否则只显示文字
-        try {
+      try {
+        const qrImg = ctx.createImage ? ctx.createImage() : null;
+        if (qrImg) {
+          qrImg.src = '/images/watermark-qr.png';
           ctx.drawImage(qrImg, exportWidth - padding - qrSize, exportHeight - padding - qrSize, qrSize, qrSize);
-        } catch (e) {
-          // QR图片加载失败，只保留文字水印
         }
+      } catch (e) {
+        // QR图片加载失败，只保留文字水印
       }
     },
 
-    // ===== 分享面板事件 =====
     onCloseShareSheet() {
       this.setData({ showShareSheet: false });
       wx.showToast({ title: '保存成功', icon: 'success' });

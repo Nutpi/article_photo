@@ -210,34 +210,20 @@ page {
   background-color: rgba(255, 255, 255, 0.02);
   border-radius: 32rpx;
   overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   box-shadow:
     0 24rpx 64rpx rgba(0, 0, 0, 0.5),
     inset 0 1rpx 2rpx rgba(255, 255, 255, 0.08);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
-  transition: all 0.4s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
-.bg-image {
-  position: absolute;
-  top: 0;
-  left: 0;
-  border-radius: 32rpx;
-  pointer-events: none;
-}
-
-/* ===== 渐变背景 ===== */
-.gradient-bg {
-  position: absolute;
-  top: 0;
-  left: 0;
+/* ===== Canvas 预览 ===== */
+.preview-canvas {
   width: 100%;
   height: 100%;
-  border-radius: 32rpx;
+  display: block;
 }
 
+/* ===== 占位符 ===== */
 .placeholder {
   display: flex;
   flex-direction: column;
@@ -284,28 +270,6 @@ page {
   color: rgba(255, 255, 255, 0.5);
   font-weight: 500;
   letter-spacing: 2rpx;
-}
-
-/* ===== 文字层 ===== */
-.text-layer {
-  position: absolute;
-  white-space: pre-wrap;
-  user-select: none;
-  transform: translate(-50%, -50%);
-  z-index: 10;
-  cursor: move;
-  letter-spacing: 2rpx;
-  max-width: 96%;
-  transition: transform 0.1s ease;
-}
-
-.text-layer.glow-effect {
-  animation: textPulse 3s ease-in-out infinite;
-}
-
-@keyframes textPulse {
-  0%, 100% { filter: brightness(1); }
-  50% { filter: brightness(1.2) drop-shadow(0 0 4rpx rgba(255,255,255,0.3)); }
 }
 
 /* ===== 底部 Dock ===== */
@@ -362,7 +326,6 @@ page {
   background: rgba(255, 255, 255, 0.06);
   margin-bottom: 8rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.04);
-  transition: all 0.3s ease;
 }
 
 .dock-icon-wrapper.accent {
@@ -441,7 +404,6 @@ page {
   font-size: 34rpx;
   font-weight: 600;
   color: #fff;
-  letter-spacing: 1rpx;
 }
 
 .panel-close {
@@ -454,7 +416,6 @@ page {
   color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.06);
   border-radius: 50%;
-  transition: all 0.25s ease;
   border: 1rpx solid rgba(255, 255, 255, 0.04);
 }
 
@@ -471,11 +432,9 @@ page {
 
 .panel-body-inner {
   padding: 16rpx 48rpx;
-  width: 100%;
   box-sizing: border-box;
 }
 
-/* ===== textarea ===== */
 .input-row {
   margin-bottom: 40rpx;
 }
@@ -489,7 +448,6 @@ page {
   font-size: 30rpx;
   color: #fff;
   border: 1rpx solid rgba(255, 255, 255, 0.08);
-  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
   box-sizing: border-box;
   line-height: 1.6;
 }
@@ -504,25 +462,17 @@ page {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* ===== 区块标签 ===== */
 .section-label {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.5);
   font-weight: 500;
   margin-bottom: 20rpx;
-  letter-spacing: 1rpx;
 }
 
-/* ===== 预设 chips ===== */
 .preset-picker {
   white-space: nowrap;
   padding: 8rpx 0;
   margin-bottom: 40rpx;
-  -webkit-overflow-scrolling: touch;
-}
-
-.preset-picker::-webkit-scrollbar {
-  display: none;
 }
 
 .preset-chip {
@@ -536,7 +486,6 @@ page {
   font-size: 26rpx;
   color: rgba(255, 255, 255, 0.65);
   border: 1rpx solid rgba(255, 255, 255, 0.06);
-  transition: all 0.25s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .preset-chip:active {
@@ -547,20 +496,13 @@ page {
   border-color: #00D4FF;
   background: rgba(0, 212, 255, 0.12);
   color: #00D4FF;
-  box-shadow: 0 4rpx 16rpx rgba(0, 212, 255, 0.2);
   font-weight: 600;
 }
 
-/* ===== 主题卡片 ===== */
 .theme-picker {
   white-space: nowrap;
   padding: 8rpx 0;
   margin-bottom: 32rpx;
-  -webkit-overflow-scrolling: touch;
-}
-
-.theme-picker::-webkit-scrollbar {
-  display: none;
 }
 
 .theme-card {
@@ -572,7 +514,6 @@ page {
   background: rgba(255, 255, 255, 0.04);
   border-radius: 24rpx;
   border: 1rpx solid rgba(255, 255, 255, 0.06);
-  transition: all 0.25s cubic-bezier(0.25, 1, 0.5, 1);
   min-width: 140rpx;
 }
 
@@ -583,7 +524,6 @@ page {
 .theme-card.active {
   border-color: #00D4FF;
   background: rgba(0, 212, 255, 0.1);
-  box-shadow: 0 4rpx 16rpx rgba(0, 212, 255, 0.15);
 }
 
 .theme-preview {
@@ -595,7 +535,6 @@ page {
   justify-content: center;
   margin-bottom: 12rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.1);
-  transition: all 0.3s ease;
 }
 
 .theme-card.active .theme-preview {
@@ -619,7 +558,6 @@ page {
   font-weight: 600;
 }
 
-/* ===== 面板底部 ===== */
 .panel-spacer {
   height: 40rpx;
 }
@@ -641,7 +579,6 @@ page {
   font-size: 32rpx;
   font-weight: 600;
   letter-spacing: 2rpx;
-  transition: all 0.3s cubic-bezier(0.25, 1, 0.5, 1);
 }
 
 .panel-btn:active {
@@ -654,19 +591,11 @@ page {
   border: 1rpx solid rgba(255, 90, 90, 0.2);
 }
 
-.delete-btn:active {
-  background: rgba(255, 90, 90, 0.18);
-}
-
 .confirm-btn {
   background: linear-gradient(135deg, #00D4FF 0%, #0088FF 100%);
   color: #fff;
   box-shadow: 0 12rpx 32rpx rgba(0, 212, 255, 0.35);
   border: 1px solid rgba(255, 255, 255, 0.15);
-}
-
-.confirm-btn:active {
-  box-shadow: 0 4rpx 16rpx rgba(0, 212, 255, 0.4);
 }
 
 /* ===== 导出用 Canvas ===== */
