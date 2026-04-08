@@ -290,13 +290,12 @@ page {
 .text-layer {
   position: absolute;
   white-space: pre-wrap;
-  word-break: break-word;
   user-select: none;
   transform: translate(-50%, -50%);
   z-index: 10;
   cursor: move;
   letter-spacing: 2rpx;
-  max-width: 90%;
+  max-width: 96%;
   transition: transform 0.1s ease;
 }
 
