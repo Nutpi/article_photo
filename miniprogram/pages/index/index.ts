@@ -891,14 +891,7 @@ Component({
 
             const drawContent = () => {
               if (this.data.hasText && this.data.textContent) {
-                // 构造导出用的 data，将坐标缩放到导出尺寸
-                const exportData = {
-                  ...this.data,
-                  textX: this.data.textX * exportScale,
-                  textY: this.data.textY * exportScale,
-                  actualFontSize: this.data.actualFontSize * exportScale,
-                };
-                this.renderText(ctx, exportWidth, exportHeight, exportData, exportScale);
+                this.renderText(ctx, exportWidth, exportHeight, this.data, exportScale);
               }
               this.doCanvasExport(canvas);
             };
@@ -1002,13 +995,7 @@ Component({
 
             const finalize = () => {
               if (this.data.hasText && this.data.textContent) {
-                const exportData = {
-                  ...this.data,
-                  textX: this.data.textX * exportScale,
-                  textY: this.data.textY * exportScale,
-                  actualFontSize: this.data.actualFontSize * exportScale,
-                };
-                this.renderText(ctx, exportWidth, exportHeight, exportData, exportScale);
+                this.renderText(ctx, exportWidth, exportHeight, this.data, exportScale);
               }
               this.drawWatermark(ctx, exportWidth, exportHeight);
               this.doCanvasExport(canvas);
