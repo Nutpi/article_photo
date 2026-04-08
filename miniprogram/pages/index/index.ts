@@ -354,6 +354,7 @@ Component({
                 wx.hideLoading();
 
                 if (result.pass) {
+                  this._loadedImage = null;
                   this.setData({
                     imageUrl: localPath,
                     checkedImageFileID: fileID,
